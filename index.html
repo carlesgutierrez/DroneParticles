@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Particle Drone Visualizer</title>
+    <link rel="stylesheet" href="style.css">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/p5.js/1.11.0/p5.js"></script>
+</head>
+
+<body>
+    <div id="ui-container">
+        <button id="resetBtn">Reset</button>
+        <div class="logo-container">
+            <svg viewBox="0 0 100 100" class="logo-svg">
+                <defs>
+                    <filter id="glow">
+                        <feGaussianBlur stdDeviation="3.5" result="coloredBlur" />
+                        <feMerge>
+                            <feMergeNode in="coloredBlur" />
+                            <feMergeNode in="SourceGraphic" />
+                        </feMerge>
+                    </filter>
+                </defs>
+                <polygon points="50,15 90,85 10,85" class="logo-triangle" />
+            </svg>
+        </div>
+        <h1>Drone Particles</h1>
+
+        <div class="control-group toggle-group">
+            <label>Use Camera Interaction</label>
+            <label class="switch">
+                <input type="checkbox" id="cameraToggle">
+                <span class="slider round"></span>
+            </label>
+        </div>
+
+        <div class="control-group">
+            <label>Particle Color</label>
+            <div id="colorSlider2D">
+                <div id="colorPicker"></div>
+            </div>
+        </div>
+
+        <div class="control-group">
+            <label for="mouseRadius">Interaction Radius</label>
+            <input type="range" id="mouseRadius" min="50" max="350" value="150">
+            <span id="radiusVal">150</span>
+        </div>
+        <div class="control-group">
+            <label for="imgScale">Mask Scale</label>
+            <input type="range" id="imgScale" min="0.1" max="1.5" step="0.1" value="0.8">
+            <span id="scaleVal">0.8</span>
+        </div>
+        <div class="control-group">
+            <label for="pDensity">Particle Density</label>
+            <input type="range" id="pDensity" min="4" max="15" step="1" value="8">
+            <span id="densityVal">8</span>
+        </div>
+        <div class="control-group">
+            <label for="returnForce">Return Speed</label>
+            <input type="range" id="returnForce" min="0.1" max="2.0" step="0.1" value="1.0">
+            <span id="returnVal">1.0</span>
+        </div>
+        <div class="control-group">
+            <label for="pSeparation">Separation Space</label>
+            <input type="range" id="pSeparation" min="5" max="30" step="1" value="12">
+            <span id="sepVal">12</span>
+        </div>
+        <div class="control-group">
+            <label for="pSensitivity">Sensitivity</label>
+            <input type="range" id="pSensitivity" min="1" max="20" step="1" value="5">
+            <span id="sensVal">5</span>
+        </div>
+        <p class="hint">Move mouse to scatter particles</p>
+    </div>
+    <script src="particle.js"></script>
+    <script src="sketch.js"></script>
+    <div id="ui-hint">Apreta 'U' para configurar</div>
+</body>
+
+</html>

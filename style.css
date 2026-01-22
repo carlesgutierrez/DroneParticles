@@ -72,13 +72,13 @@ h1 {
     100% {
         opacity: 0.8;
         stroke-width: 3.5;
-        filter: drop-shadow(0 0 5px #00ffcc);
+        filter: drop-shadow(0 0 5px #F5D547);
     }
 
     50% {
         opacity: 1;
         stroke-width: 5;
-        filter: drop-shadow(0 0 15px #00ffcc);
+        filter: drop-shadow(0 0 15px #F5D547);
     }
 }
 
@@ -190,7 +190,7 @@ input:checked+.slider:before {
     bottom: 20px;
     left: 20px;
     font-size: 0.65rem;
-    color: #00ffcc;
+    color: #F5D547;
     opacity: 0.5;
     letter-spacing: 0.5px;
     pointer-events: none;
@@ -207,7 +207,7 @@ label {
 
 input[type="range"] {
     width: 100%;
-    accent-color: #00ffcc;
+    accent-color: #F5D547;
     background: rgba(255, 255, 255, 0.1);
     border-radius: 4px;
     height: 4px;
@@ -219,7 +219,7 @@ span {
     display: block;
     text-align: right;
     font-weight: 600;
-    color: #00ffcc;
+    color: #F5D547;
 }
 
 .hint {

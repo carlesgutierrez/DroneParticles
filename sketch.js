@@ -58,6 +58,9 @@ function setup() {
         if (mouseIsPressed) updateColorFromUI();
     });
 
+    loadSavedColor();
+    loadSavedParams();
+
     // Load image pixels once for faster sampling
     img.loadPixels();
     generateTargets();
@@ -67,8 +70,14 @@ function setup() {
     }
 
     // Update targets on slider input
-    imgScaleSlider.input(updateParticleTargets);
-    densitySlider.input(updateParticleTargets);
+    imgScaleSlider.input(() => { updateParticleTargets(); saveParams(); });
+    densitySlider.input(() => { updateParticleTargets(); saveParams(); });
+
+    // Save other sliders on input
+    mouseRadiusSlider.input(saveParams);
+    returnSlider.input(saveParams);
+    sepSlider.input(saveParams);
+    sensSlider.input(saveParams);
 
     cameraToggle = select('#cameraToggle');
     cameraToggle.changed(toggleCamera);
@@ -338,20 +347,76 @@ function updateColorFromUI() {
     currentColor = color(h, s, b);
     colorMode(RGB, 255);
 
+    // Save state to localStorage
+    localStorage.setItem('particleColorX', (x / rect.width).toFixed(4));
+    localStorage.setItem('particleColorY', (y / rect.height).toFixed(4));
+
     // Broadcast color update to all particles
     for (let p of particles) {
         p.color = currentColor;
     }
 }
 
+function loadSavedColor() {
+    let savedX = localStorage.getItem('particleColorX');
+    let savedY = localStorage.getItem('particleColorY');
+
+    if (savedX !== null && savedY !== null) {
+        let rect = colorSlider2D.elt.getBoundingClientRect();
+        // Fallback to a fixed width if rect isn't available/ready (though it should be in setup)
+        let w = rect.width || 180;
+        let h_rect = rect.height || 180;
+
+        let x = float(savedX) * w;
+        let y = float(savedY) * h_rect;
+
+        colorPicker.style('left', x + 'px');
+        colorPicker.style('top', y + 'px');
+
+        colorMode(HSB, 360, 100, 100);
+        let h = map(x, 0, w, 0, 360);
+        let s, b;
+
+        if (y < h_rect / 2) {
+            s = map(y, 0, h_rect / 2, 0, 100);
+            b = 100;
+        } else {
+            s = 100;
+            b = map(y, h_rect / 2, h_rect, 100, 0);
+        }
+
+        currentColor = color(h, s, b);
+        colorMode(RGB, 255);
+    }
+}
+
+function saveParams() {
+    localStorage.setItem('mouseRadius', mouseRadiusSlider.value());
+    localStorage.setItem('imgScale', imgScaleSlider.value());
+    localStorage.setItem('pDensity', densitySlider.value());
+    localStorage.setItem('returnForce', returnSlider.value());
+    localStorage.setItem('pSeparation', sepSlider.value());
+    localStorage.setItem('pSensitivity', sensSlider.value());
+}
+
+function loadSavedParams() {
+    if (localStorage.getItem('mouseRadius') !== null) mouseRadiusSlider.value(localStorage.getItem('mouseRadius'));
+    if (localStorage.getItem('imgScale') !== null) imgScaleSlider.value(localStorage.getItem('imgScale'));
+    if (localStorage.getItem('pDensity') !== null) densitySlider.value(localStorage.getItem('pDensity'));
+    if (localStorage.getItem('returnForce') !== null) returnSlider.value(localStorage.getItem('returnForce'));
+    if (localStorage.getItem('pSeparation') !== null) sepSlider.value(localStorage.getItem('pSeparation'));
+    if (localStorage.getItem('pSensitivity') !== null) sensSlider.value(localStorage.getItem('pSensitivity'));
+}
+
 function resetControls() {
     mouseRadiusSlider.value(150);
     imgScaleSlider.value(0.8);
-    densitySlider.value(11);
+    densitySlider.value(10);
     returnSlider.value(1.0);
     sepSlider.value(12);
     sensSlider.value(5);
 
     // Refresh targets and particles
     updateParticleTargets();
+    saveParams();
 }

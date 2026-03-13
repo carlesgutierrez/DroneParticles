@@ -86,37 +86,45 @@ class Particle {
         }
     }
 
-    // Optimized repulsion with threshold (sensitivity) and dynamic separation
-    repelGrid(grid, cellSize, desiredSeparation, sensitivity) {
+    // Optimized repulsion with TypedArrays to avoid GC pressure (perfect for Firefox)
+    repelGrid(allParticles, buckets, counts, cols, rows, cellSize, desiredSeparation, sensitivity, maxPerCell) {
         let count = 0;
         let steer = createVector();
 
         let gx = floor(this.pos.x / cellSize);
         let gy = floor(this.pos.y / cellSize);
 
+        // Check 3x3 grid of cells
         for (let x = gx - 1; x <= gx + 1; x++) {
+            if (x < 0 || x >= cols) continue;
             for (let y = gy - 1; y <= gy + 1; y++) {
-                let key = `${x},${y}`;
-                if (grid[key]) {
-                    for (let other of grid[key]) {
-                        if (other === this) continue;
+                if (y < 0 || y >= rows) continue;
 
-                        let d = p5.Vector.dist(this.pos, other.pos);
+                let cellIdx = x + y * cols;
+                let particlesInCell = counts[cellIdx];
+                let bucketOffset = cellIdx * maxPerCell;
 
-                        // Condition: Only repel if the distance is less than separation
-                        // AND only if the neighbor has moved significantly (sensitivity / threshold)
-                        // Or if we are too close (urgent repulsion)
-                        let neighborMovement = p5.Vector.dist(other.pos, other.target);
+                for (let i = 0; i < particlesInCell; i++) {
+                    let otherIdx = buckets[bucketOffset + i];
+                    let other = allParticles[otherIdx];
+                    
+                    if (other === this) continue;
 
-                        if (d < desiredSeparation) {
-                            // If neighbor moved more than sensitivity, or we are very close
-                            if (neighborMovement > sensitivity || d < desiredSeparation * 0.5) {
-                                let diff = p5.Vector.sub(this.pos, other.pos);
-                                diff.normalize();
-                                diff.div(d);
-                                steer.add(diff);
-                                count++;
-                            }
+                    let dSq = (this.pos.x - other.pos.x) ** 2 + (this.pos.y - other.pos.y) ** 2;
+                    let sepSq = desiredSeparation * desiredSeparation;
+
+                    if (dSq < sepSq) {
+                        let d = sqrt(dSq);
+                        let neighborMovementSq = (other.pos.x - other.target.x) ** 2 + (other.pos.y - other.target.y) ** 2;
+                        let sensSq = sensitivity * sensitivity;
+
+                        // If neighbor moved more than sensitivity, or we are very close
+                        if (neighborMovementSq > sensSq || dSq < sepSq * 0.25) {
+                            let diff = p5.Vector.sub(this.pos, other.pos);
+                            diff.normalize();
+                            diff.div(d || 1);
+                            steer.add(diff);
+                            count++;
                         }
                     }
                 }

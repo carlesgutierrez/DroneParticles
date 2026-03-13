@@ -13,10 +13,21 @@ let colorSlider2D, colorPicker;
 let handLandmarker;
 let video;
 let detections = [];
-let handPoints = []; // Stores pre-mapped interaction points
+let handPoints = [];
 let lastVideoTime = -1;
 let useCamera = false;
 let cameraToggle;
+let trackingFPS = 0;
+let lastTrackingTime = 0;
+let trackingFrameCount = 0;
+let fpsTimer = 0;
+let activeDelegate = "NONE";
+
+// Optimized Grid Variables
+let gridCols, gridRows;
+let gridBuckets = [];
+let gridCount = [];
+let maxParticlesPerCell = 10; // Optimization: limit search density
 
 function preload() {
     img = loadImage('mask.png');
@@ -86,6 +97,18 @@ function setup() {
     if (!uiVisible) {
         select('#ui-container').addClass('hidden');
     }
+
+    initGrid();
+}
+
+function initGrid() {
+    cellSize = 25;
+    gridCols = ceil(width / cellSize);
+    gridRows = ceil(height / cellSize);
+    let totalCells = gridCols * gridRows;
+    
+    gridBuckets = new Int32Array(totalCells * maxParticlesPerCell);
+    gridCount = new Int32Array(totalCells);
 }
 
 function toggleCamera() {
@@ -98,21 +121,23 @@ function toggleCamera() {
         }
         if (!handLandmarker) {
             initHandLandmarker();
+        } else {
+            predictWebcam();
         }
     } else {
-        // Clear detections if camera is turned off
         detections = [];
+        handPoints = [];
     }
 }
 
 async function initHandLandmarker() {
     try {
-        console.log("Loading MediaPipe...");
-        const visionModule = await import("https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.0");
+        console.log("Loading MediaPipe 0.10.32...");
+        const visionModule = await import("https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.32");
         const { HandLandmarker, FilesetResolver } = visionModule;
 
         const vision = await FilesetResolver.forVisionTasks(
-            "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.0/wasm"
+            "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.32/wasm"
         );
         handLandmarker = await HandLandmarker.createFromOptions(vision, {
             baseOptions: {
@@ -122,9 +147,53 @@ async function initHandLandmarker() {
             runningMode: "VIDEO",
             numHands: 2
         });
+        activeDelegate = "GPU"; // Set after successful initialization
         console.log("Hand Landmarker Initialized");
+        predictWebcam();
     } catch (e) {
+        activeDelegate = "ERROR";
         console.error("Error initializing Hand Landmarker:", e);
+    }
+}
+
+async function predictWebcam() {
+    if (!useCamera || !handLandmarker || !video) return;
+
+    if (video.elt.readyState >= 2 && video.elt.currentTime !== lastVideoTime) {
+        lastVideoTime = video.elt.currentTime;
+        let startTimeMs = performance.now();
+        detections = handLandmarker.detectForVideo(video.elt, startTimeMs);
+        
+        // Calculate Tracking FPS
+        trackingFrameCount++;
+        let now = performance.now();
+        if (now - fpsTimer > 1000) {
+            trackingFPS = trackingFrameCount;
+            trackingFrameCount = 0;
+            fpsTimer = now;
+        }
+
+        // Update interaction points immediately after detection
+        updateHandPoints();
+    }
+    
+    // Call this function again to keep predicting
+    window.requestAnimationFrame(predictWebcam);
+}
+
+function updateHandPoints() {
+    handPoints = [];
+    if (detections && detections.landmarks) {
+        for (let hand of detections.landmarks) {
+            const essentialIndices = [0, 4, 8, 12, 16, 20];
+            for (let idx of essentialIndices) {
+                let landmark = hand[idx];
+                handPoints.push(createVector(
+                    map(landmark.x, 1, 0, 0, width),
+                    map(landmark.y, 0, 1, 0, height)
+                ));
+            }
+        }
     }
 }
 
@@ -145,35 +214,19 @@ function draw() {
     sepValLabel.html(separationSpace);
     sensValLabel.html(sensitivity);
 
-    // Spatial Partitioning: Build Grid
-    grid = {};
-    for (let p of particles) {
+    // Optimized Grid: Fill buckets
+    gridCount.fill(0);
+    for (let i = 0; i < particles.length; i++) {
+        let p = particles[i];
         let gx = floor(p.pos.x / cellSize);
         let gy = floor(p.pos.y / cellSize);
-        let key = `${gx},${gy}`;
-        if (!grid[key]) grid[key] = [];
-        grid[key].push(p);
-    }
-
-    // Detect hands (only if enabled)
-    if (useCamera && handLandmarker && video && video.elt.currentTime !== lastVideoTime) {
-        let startTimeMs = performance.now();
-        detections = handLandmarker.detectForVideo(video.elt, startTimeMs);
-        lastVideoTime = video.elt.currentTime;
-
-        // PRE-OPTIMIZATION: Map and filter points once per frame
-        handPoints = [];
-        if (detections && detections.landmarks) {
-            for (let hand of detections.landmarks) {
-                // Only use essential points: Wrist (0), and Fingertips (4, 8, 12, 16, 20)
-                const essentialIndices = [0, 4, 8, 12, 16, 20];
-                for (let idx of essentialIndices) {
-                    let landmark = hand[idx];
-                    handPoints.push(createVector(
-                        map(landmark.x, 1, 0, 0, width),
-                        map(landmark.y, 0, 1, 0, height)
-                    ));
-                }
+        
+        if (gx >= 0 && gx < gridCols && gy >= 0 && gy < gridRows) {
+            let cellIdx = gx + gy * gridCols;
+            let count = gridCount[cellIdx];
+            if (count < maxParticlesPerCell) {
+                gridBuckets[cellIdx * maxParticlesPerCell + count] = i;
+                gridCount[cellIdx]++;
             }
         }
     }
@@ -187,14 +240,14 @@ function draw() {
         // Apply mouse interaction
         p.interact(createVector(mouseX, mouseY), mouseRadius);
 
-        // Apply hand interaction (using pre-mapped points)
+        // Apply hand interaction
         if (useCamera) {
             for (let hp of handPoints) {
                 p.interact(hp, mouseRadius);
             }
         }
 
-        let separation = p.repelGrid(grid, cellSize, separationSpace, sensitivity);
+        let separation = p.repelGrid(particles, gridBuckets, gridCount, gridCols, gridRows, cellSize, separationSpace, sensitivity, maxParticlesPerCell);
         p.applyForce(separation.mult(0.6));
 
         p.update();
@@ -203,6 +256,65 @@ function draw() {
 
     // Draw hand skeleton (White)
     drawHandSkeleton();
+
+    // Display FPS Info when UI is active
+    if (uiVisible) {
+        drawFPSInfo();
+        drawStatusInfo();
+    }
+}
+
+function drawStatusInfo() {
+    push();
+    textAlign(RIGHT, TOP);
+    textSize(12);
+    textFont('monospace');
+    noStroke();
+
+    // Background plate
+    fill(0, 150);
+    rect(width - 160, 10, 150, 25, 5);
+
+    // Delegate Text
+    fill(255);
+    text(`Delegate: `, width - 60, 27);
+    
+    if (activeDelegate === "GPU") {
+        fill(0, 255, 127); // Bright green for GPU
+        text("GPU", width - 20, 27);
+    } else if (activeDelegate === "ERROR") {
+        fill(255, 69, 0); // Red for error
+        text("ERR", width - 20, 27);
+    } else {
+        fill(200);
+        text(activeDelegate, width - 20, 27);
+    }
+    pop();
+}
+
+function drawFPSInfo() {
+    push();
+    textAlign(RIGHT, BOTTOM);
+    textSize(14);
+    textFont('monospace');
+    noStroke();
+    
+    // Background plate for readability
+    fill(0, 150);
+    rect(width - 160, height - 50, 150, 40, 5);
+    
+    // Render text
+    fill(255);
+    text(`App FPS: ${floor(frameRate())}`, width - 20, height - 30);
+    
+    if (useCamera) {
+        fill(0, 255, 204);
+        text(`Track FPS: ${trackingFPS}`, width - 20, height - 15);
+    } else {
+        fill(150);
+        text(`Track FPS: OFF`, width - 20, height - 15);
+    }
+    pop();
 }
 
 function drawHandSkeleton() {
@@ -224,7 +336,6 @@ function drawHandSkeleton() {
 }
 
 function drawHandConnections(hand) {
-    // MediaPipe Hand Connections (simplified index mapping for common lines)
     const connections = [
         [0, 1], [1, 2], [2, 3], [3, 4], // Thumb
         [0, 5], [5, 6], [6, 7], [7, 8], // Index
@@ -277,29 +388,24 @@ function generateTargets() {
     }
 }
 
-// Update targets when scale changes
 function mouseReleased() {
-    if (mouseX < 250 && mouseY < 250) { // If slider was likely adjusted
+    if (mouseX < 250 && mouseY < 250) {
         updateParticleTargets();
     }
 }
 
 function updateParticleTargets() {
     generateTargets();
-    // Re-assign targets to existing particles (or adjust particle count)
     if (points.length > particles.length) {
-        // Add more particles if points increased
         for (let i = particles.length; i < points.length; i++) {
             let p = new Particle(random(width), random(height));
             p.target = createVector(points[i].x, points[i].y);
             particles.push(p);
         }
     } else if (points.length < particles.length) {
-        // Remove particles if points decreased
         particles.splice(points.length);
     }
 
-    // Sync points to particles
     for (let i = 0; i < points.length; i++) {
         particles[i].target.set(points[i].x, points[i].y);
     }
@@ -308,6 +414,7 @@ function updateParticleTargets() {
 function windowResized() {
     resizeCanvas(windowWidth, windowHeight);
     updateParticleTargets();
+    initGrid();
 }
 
 function keyPressed() {
@@ -322,7 +429,6 @@ function keyPressed() {
 }
 
 function updateColorFromUI() {
-    // Basic mapping: X -> Hue (0 to 360)
     let rect = colorSlider2D.elt.getBoundingClientRect();
     let x = constrain(mouseX - rect.left, 0, rect.width);
     let y = constrain(mouseY - rect.top, 0, rect.height);
@@ -335,11 +441,9 @@ function updateColorFromUI() {
     let s, b;
 
     if (y < rect.height / 2) {
-        // Top to middle: White to Full Color
         s = map(y, 0, rect.height / 2, 0, 100);
         b = 100;
     } else {
-        // Middle to bottom: Full Color to Black
         s = 100;
         b = map(y, rect.height / 2, rect.height, 100, 0);
     }
@@ -347,11 +451,9 @@ function updateColorFromUI() {
     currentColor = color(h, s, b);
     colorMode(RGB, 255);
 
-    // Save state to localStorage
     localStorage.setItem('particleColorX', (x / rect.width).toFixed(4));
     localStorage.setItem('particleColorY', (y / rect.height).toFixed(4));
 
-    // Broadcast color update to all particles
     for (let p of particles) {
         p.color = currentColor;
     }
@@ -363,7 +465,6 @@ function loadSavedColor() {
 
     if (savedX !== null && savedY !== null) {
         let rect = colorSlider2D.elt.getBoundingClientRect();
-        // Fallback to a fixed width if rect isn't available/ready (though it should be in setup)
         let w = rect.width || 180;
         let h_rect = rect.height || 180;
 
@@ -416,7 +517,6 @@ function resetControls() {
     sepSlider.value(12);
     sensSlider.value(5);
 
-    // Refresh targets and particles
     updateParticleTargets();
     saveParams();
 }
